@@ -1,0 +1,24 @@
+# Secrets & local env
+.env
+data/cara/secret.key
+
+# Bind-mounted data — keep the folder structure, ignore the contents
+data/openwebui/*
+data/cara/*
+data/chroma/*
+data/documents/manuals/*
+data/documents/workflows/*
+data/documents/inventory/*
+!**/.gitkeep
+
+# Local backups (timestamped tarballs from backup.sh)
+backups/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+
+# macOS
+.DS_Store

@@ -1,0 +1,66 @@
+name: cara
+
+services:
+  # --- Chat frontend ---------------------------------------------------------
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: cara-openwebui
+    # Overwrite Open WebUI's bundled icons with the CARA branding (mounted at /branding),
+    # then start normally. Runs every start, so it survives Open WebUI image updates.
+    # "$$d" escapes compose's own variable interpolation so the shell receives "$d".
+    command:
+      - bash
+      - -c
+      - 'for d in /app/backend/open_webui/static /app/build/static; do cp -f /branding/* "$$d"/ 2>/dev/null || true; done; cp -f /branding/favicon.png /app/build/favicon.png 2>/dev/null || true; exec bash start.sh'
+    ports:
+      - "3000:8080"            # open http://localhost:3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Point Open WebUI at LM Studio on the host (also settable in the UI)
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE_URL:-http://host.docker.internal:1234/v1}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-lm-studio}
+      # Public URL of this Open WebUI on the LAN (used for absolute links).
+      - WEBUI_URL=${WEBUI_URL:-http://localhost:3000}
+      # Admin account exists -> lock down self-signups (the admin can still add users).
+      - ENABLE_SIGNUP=false
+      # Privacy: keep everything local — disable Open WebUI's anonymous telemetry/analytics.
+      - DO_NOT_TRACK=true
+      - SCARF_NO_ANALYTICS=true
+      - ANONYMIZED_TELEMETRY=false
+    volumes:
+      - ./data/openwebui:/app/backend/data
+      # CARA branding icons, copied over the defaults by the command above (read-only).
+      - ./branding/openwebui:/branding:ro
+    depends_on:
+      - cara-backend
+    restart: unless-stopped
+
+  # --- Custom backend: data sync + RAG + OpenAPI tool server -----------------
+  cara-backend:
+    build: ./backend
+    container_name: cara-backend
+    ports:
+      - "8000:8000"            # admin UI at /admin, tools at /tools, spec at /openapi.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - CARA_DATA_DIR=/data
+    volumes:
+      - ./data/cara:/data/cara            # SQLite cache + settings + secret key + model cache
+      - ./data/chroma:/data/chroma        # vector store
+      - ./data/documents:/data/documents  # manuals / workflow docs / inventory xlsx
+      # Read-only mount of ONLY the shared Inventory folder, mirrored under /hostfs so the
+      # admin-UI inventory path resolves. Long syntax because the host path contains spaces.
+      - type: bind
+        source: "/Users/gds/Library/CloudStorage/OneDrive-SharedLibraries-CollegiateAwards/Collegiate Awards - Documents/General/Inventory"
+        target: "/hostfs/Users/gds/Library/CloudStorage/OneDrive-SharedLibraries-CollegiateAwards/Collegiate Awards - Documents/General/Inventory"
+        read_only: true
+    restart: unless-stopped
+
+# NOTE: LM Studio runs as a HOST app (not a container) so it can use Metal/GPU.
+# Every persistent volume above is a bind mount into ./data so the whole system
+# is portable: copy this folder to a new machine, install Docker + LM Studio,
+# re-download the model, and `docker compose up`.

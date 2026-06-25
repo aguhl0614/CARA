@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block content %}
+
+<section>
+  <h2>Data sync</h2>
+  <table>
+    <tr><th>Source</th><th>Status</th><th>Last run</th><th>Records</th><th>Cursor / error</th><th></th></tr>
+    {% for st in sync_states %}
+    <tr>
+      <td>{{ st.source }}</td>
+      <td>
+        {% if st.last_status == 'ok' %}<span class="ok">ok</span>
+        {% elif st.last_status %}<span class="bad">{{ st.last_status }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td class="muted">{{ st.last_run_at | localdt }}</td>
+      <td>{{ record_counts.get(st.source, st.record_count) }}</td>
+      <td class="muted">{{ st.last_error or st.cursor or '—' }}</td>
+      <td><form class="inline" method="post" action="/admin/sync/{{ st.source }}"><button class="secondary">Sync now</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+</section>
+
+<section>
+  <h2>Credentials <span class="muted">(encrypted at rest)</span></h2>
+  <table>
+    <tr><th>Provider</th><th>Configured</th></tr>
+    <tr><td>QuickBooks</td><td>{% if cred_status.get('quickbooks') %}<span class="ok">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
+    <tr><td>Monday.com</td><td>{% if cred_status.get('monday') %}<span class="ok">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
+    <tr><td>BigCommerce</td><td>{% if cred_status.get('bigcommerce') %}<span class="ok">yes</span>{% else %}<span class="muted">no</span>{% endif %}</td></tr>
+  </table>
+
+  <form method="post" action="/admin/credentials/bigcommerce" style="margin-top:16px;">
+    <strong class="prov">BigCommerce</strong>
+    <div class="row">
+      <div><label>Store hash</label><input name="store_hash"></div>
+      <div><label>Access token</label><input name="access_token" type="password"></div>
+      <div><label>Min order # (optional)</label><input name="min_order_id" placeholder="e.g. 3900"></div>
+      <button>Save</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/credentials/monday" style="margin-top:16px;">
+    <strong class="prov">Monday.com</strong>
+    <div class="row">
+      <div><label>API token</label><input name="token" type="password"></div>
+      <div><label>Board ID</label><input name="board_id"></div>
+      <div><label>Status column ID</label><input name="status_column_id"></div>
+      <div><label>Order # column ID</label><input name="order_number_column_id"></div>
+      <button>Save</button>
+    </div>
+  </form>
+
+  <form method="post" action="/admin/credentials/quickbooks" style="margin-top:16px;">
+    <strong class="prov">QuickBooks Online</strong>
+    <div class="row">
+      <div><label>Realm ID</label><input name="realm_id"></div>
+      <div><label>Client ID</label><input name="client_id"></div>
+      <div><label>Client secret</label><input name="client_secret" type="password"></div>
+      <div><label>Refresh token</label><input name="refresh_token" type="password"></div>
+      <div><label>Environment</label><input name="environment" value="production"></div>
+      <div><label>Entities</label><input name="entities" value="Estimate"></div>
+      <div><label>Min estimate # (optional)</label><input name="min_doc_number" placeholder="e.g. 22735"></div>
+      <button>Save</button>
+    </div>
+  </form>
+  <p class="muted">Entities defaults to <code>Estimate</code> (comma-separate to add <code>Invoice</code>/<code>SalesReceipt</code>). Min estimate # limits the backfill.</p>
+</section>
+
+<section>
+  <h2>Monday columns</h2>
+  <form method="post" action="/admin/monday/columns/refresh" style="margin-bottom:10px;">
+    <button class="secondary">Refresh columns from board</button>
+    {% if monday_columns_error %}<span class="bad">&nbsp;{{ monday_columns_error }}</span>{% endif %}
+  </form>
+  {% if monday_columns %}
+  <form method="post" action="/admin/monday/columns" class="row">
+    <div><label>Group to sync</label>
+      <select name="group">
+        {% if not monday_groups %}<option value="{{ monday_group }}" selected>{{ monday_group }}</option>{% endif %}
+        {% for g in monday_groups %}
+        <option value="{{ g.title }}"{% if monday_group == g.title %} selected{% endif %}>{{ g.title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% for key, label in [('status','Status (headline)'), ('due','Due date'), ('hard','Hard date'), ('amount','Amount'), ('person','Owner'), ('quick','Quick info')] %}
+    <div><label>{{ label }}</label>
+      <select name="{{ key }}">
+        <option value="">(auto-detect)</option>
+        {% for c in monday_columns %}
+        <option value="{{ c.id }}"{% if monday_map[key] == c.id %} selected{% endif %}>{{ c.title }} ({{ c.type }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endfor %}
+    <div><label>Stages to track</label>
+      <select name="stages" multiple size="6">
+        {% for c in monday_columns if c.type == 'status' %}
+        <option value="{{ c.id }}"{% if not monday_map.stages or c.id in monday_map.stages %} selected{% endif %}>{{ c.title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button>Save mapping</button>
+  </form>
+  <p class="muted">Only the chosen <strong>group</strong> is synced (default "Open Jobs"); other groups (completed jobs) are ignored. Blank column = auto-detect by title/type. "Stages to track" = the status columns captured per job (defaults to all). Saving re-syncs Monday so the mapping/group applies to every job.</p>
+  {% else %}
+  <p class="muted">Save your Monday token + board ID under Credentials above, then click "Refresh columns from board" to choose mappings.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Machines &amp; software</h2>
+  {% for m in machines %}
+  <form method="post" action="/admin/machines/{{ m.id }}" class="row" style="margin-bottom:8px; align-items:end;">
+    <div style="width:40px;"><label>ID</label><div class="muted">{{ m.id }}</div></div>
+    <div><label>Name</label><input name="name" value="{{ m.name }}" required></div>
+    <div><label>Kind</label>
+      <select name="kind">
+        <option value="machine"{% if m.kind == 'machine' %} selected{% endif %}>machine</option>
+        <option value="software"{% if m.kind == 'software' %} selected{% endif %}>software</option>
+      </select>
+    </div>
+    <div style="flex:1; min-width:240px;"><label>Aliases (comma-separated)</label><input name="aliases" value="{{ m.aliases|join(', ') }}" style="width:100%;"></div>
+    <button>Save</button>
+    <button class="secondary" formaction="/admin/machines/{{ m.id }}/delete" formnovalidate
+            onclick="return confirm('Delete this machine? Its uploaded manuals stay, but lose this machine tag.');">Delete</button>
+  </form>
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endfor %}
+
+  <h2 style="margin-top:18px;">Add machine / software</h2>
+  <form method="post" action="/admin/machines" class="row">
+    <div><label>Name</label><input name="name" required></div>
+    <div><label>Kind</label><select name="kind"><option value="machine">machine</option><option value="software">software</option></select></div>
+    <div><label>Aliases (comma-separated)</label><input name="aliases"></div>
+    <button>Add</button>
+  </form>
+</section>
+
+<section>
+  <h2>Documents</h2>
+  <table>
+    <tr><th>Title</th><th>Type</th><th>Machine IDs</th><th>Chunks</th><th>Ingested</th><th></th></tr>
+    {% for d in documents %}
+    <tr>
+      <td>{{ d.title }}</td><td>{{ d.doc_type }}</td><td class="muted">{{ d.machine_ids|join(', ') }}</td>
+      <td>{{ d.chunk_count }}</td><td class="muted">{{ d.ingested_at | localdt }}</td>
+      <td><form method="post" action="/admin/documents/{{ d.id }}/delete" class="inline"
+               onsubmit="return confirm('Delete this document and its indexed text?');"><button class="secondary">Delete</button></form></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">None yet.</td></tr>
+    {% endfor %}
+  </table>
+  <form method="post" action="/admin/documents" enctype="multipart/form-data" class="row" style="margin-top:12px;">
+    <div><label>Title</label><input name="title"></div>
+    <div><label>Type</label><select name="doc_type"><option value="manual">manual</option><option value="workflow">workflow</option><option value="inventory">inventory</option></select></div>
+    <div><label>Assign machines</label>
+      <select name="machine_ids" multiple size="3">
+        {% for m in machines %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div><label>File (PDF / DOCX / XLSX)</label><input name="file" type="file"></div>
+    <button>Upload &amp; ingest</button>
+  </form>
+  <p class="muted">Data directory: {{ data_dir }}</p>
+</section>
+
+<section>
+  <h2>Settings</h2>
+  <form method="post" action="/admin/settings" class="row">
+    <div style="flex:1; min-width:340px;">
+      <label>Inventory file path (full macOS path; blank = use a file uploaded under Documents)</label>
+      <input name="inventory_path" value="{{ inventory_path }}" style="width:100%;" placeholder="/Users/Shared/Inventory/inventory.xlsx">
+    </div>
+    <div><label>Sheet / tab (optional)</label><input name="inventory_sheet" value="{{ inventory_sheet }}" placeholder="first sheet"></div>
+    <div><label>Time zone (IANA)</label><input name="timezone" value="{{ timezone }}" placeholder="America/Chicago"></div>
+    <button>Save</button>
+  </form>
+  <p class="muted">Time zone drives "today / this week / overdue" and how times are shown here (dates MM-DD-YYYY, times h:mm AM/PM). Inventory: CARA reads the file in place (read-only) and re-syncs when it changes — paths under <code>/Users</code> work out of the box; for a <code>/Volumes</code> network share, ask to add it. After changing the inventory path, use <strong>Sync now</strong> on the inventory row.</p>
+</section>
+
+<section>
+  <h2>Support &amp; troubleshooting</h2>
+  <p class="muted">Need help, or seeing a sync error above? Contact <strong>{{ support_contact or 'your CARA administrator' }}</strong>.</p>
+  <p class="muted">Shareable diagnostic logs: <code>data/cara/cara.log</code>. Per-integration errors also appear in the Data sync table.</p>
+</section>
+
+{% endblock %}
