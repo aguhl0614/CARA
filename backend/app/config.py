@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # tool-server auth). Empty = open. Set this to lock the data tools down on a shared network.
     tools_token: str = ""
 
+    # LLM proxy: Open WebUI points OPENAI_API_BASE_URL at this backend's /llm/v1, which classifies
+    # each chat (quick/non-thinking vs thinking) and forwards to LM Studio with per-mode params.
+    llm_upstream: str = "http://host.docker.internal:1234/v1"  # the real LM Studio OpenAI API
+    llm_upstream_key: str = "lm-studio"                        # key sent upstream (LM Studio ignores it)
+    llm_proxy_key: str = ""                                    # require this Bearer from Open WebUI; empty = open
+
     @property
     def cara_dir(self) -> Path:
         return self.data_dir / "cara"

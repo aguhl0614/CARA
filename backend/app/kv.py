@@ -23,6 +23,24 @@ def set_setting(key: str, value: str) -> None:
         s.commit()
 
 
+def get_setting_float(key: str, default: float) -> float:
+    """Fetch a setting as a float, falling back to default for missing/blank/invalid values."""
+    val = get_setting(key)
+    try:
+        return float(val) if val not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
+def get_setting_int(key: str, default: int) -> int:
+    """Fetch a setting as an int, falling back to default for missing/blank/invalid values."""
+    val = get_setting(key)
+    try:
+        return int(float(val)) if val not in (None, "") else default
+    except (TypeError, ValueError):
+        return default
+
+
 def get_timezone_name() -> str:
     """Effective IANA timezone: the admin-set value, else the env/config default."""
     from .config import get_settings

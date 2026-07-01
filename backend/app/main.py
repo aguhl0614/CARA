@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from .admin.routes import router as admin_router
 from .config import get_settings
 from .db import init_db
+from .llm.proxy import router as llm_router
 from .print_routes import router as print_router
 from .security import ensure_admin
 from .sync.scheduler import shutdown_scheduler, start_scheduler
@@ -53,8 +54,22 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+    # Hide the main app's API schema/docs — they would reveal the admin/print/proxy endpoints.
+    # (The /tools sub-app keeps its own spec at /tools/openapi.json for Open WebUI.)
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 app.add_middleware(SessionMiddleware, secret_key=_settings.secret_key)
+
+
+@app.middleware("http")
+async def _security_headers(request, call_next):
+    resp = await call_next(request)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    return resp
 
 # Tools are a mounted sub-app so its /openapi.json (served at /tools/openapi.json)
 # contains ONLY the read-only tools. Open WebUI ingests that spec, so admin endpoints
@@ -77,6 +92,9 @@ app.mount("/tools", tools_app)
 
 app.include_router(admin_router)
 app.include_router(print_router)
+# OpenAI-compatible LLM proxy (Open WebUI -> /llm/v1 -> LM Studio): classifies each chat and
+# applies the per-mode thinking (reasoning_effort) + sampling settings.
+app.include_router(llm_router)
 
 
 @app.get("/healthz", tags=["system"])

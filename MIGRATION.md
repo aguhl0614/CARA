@@ -19,10 +19,13 @@ config (`.env`), and all state (`./data`) — is portable.
 
 2. **Install prerequisites** on the new Mac: **Docker Desktop** and **LM Studio**.
 
-3. **LM Studio**: download **Qwen3.6‑27B** (MLX build incl. the MTP head), enable
-   **speculative decoding (MTP)**, and start the server on port **1234**.
+3. **LM Studio**: download **Qwen3.6‑35B‑A3B** (MLX build; MoE) and start the server on port
+   **1234**. CARA toggles thinking per request via `reasoning_effort`, so no special setup is needed.
 
-4. **Inventory file mount (machine-specific — edit this!).** The inventory file is read
+4. **Local hostname.** Update local DNS/mDNS/hosts so `cara.local` points to the new Mac's
+   reserved LAN IP. Direct IP access still works through `http://<LAN-IP>:3000`.
+
+5. **Inventory file mount (machine-specific — edit this!).** The inventory file is read
    from a folder *outside* this project, so `docker-compose.yml` bind-mounts that one folder
    read-only. On a new machine the path differs, so:
    - In `docker-compose.yml`, update the inventory bind mount's `source:` **and** `target:`
@@ -34,25 +37,28 @@ config (`.env`), and all state (`./data`) — is portable.
    - *If you don't use an external inventory file*, delete that bind-mount block and instead
      upload the spreadsheet via the admin **Documents** page (type `inventory`).
 
-5. **Credentials / Fernet key.** Your QuickBooks/Monday/BigCommerce credentials are stored
+6. **Credentials / Fernet key.** Your QuickBooks/Monday/BigCommerce credentials are stored
    **encrypted** in `data/cara/cara.db`, and the key is `data/cara/secret.key` — both move with
    `data/`. Leave **`CARA_FERNET_KEY` blank** in `.env` so CARA uses that moved key, and your
    credentials (including the QBO refresh token) decrypt and keep working. If you change/lose
    the key, just re-enter credentials in the admin UI.
 
-6. **Bring it up**:
+7. **Bring it up**:
    ```bash
    docker compose up -d --build
    ```
 
-7. **Open WebUI**: your accounts and chats moved with `data/openwebui`. Confirm the model
-   connection points to `http://host.docker.internal:1234/v1`, and that the CARA tool server
-   is registered at `http://cara-backend:8000/tools`. Re-apply the CARA system prompt / model
-   preset if needed.
+8. **Open WebUI**: your accounts and chats moved with `data/openwebui`. Confirm the OpenAI
+   connection points to the **CARA proxy** `http://cara-backend:8000/llm/v1` (Settings →
+   Connections) — chats route through the backend for thinking/non-thinking handling — and that
+   the CARA tool server is registered at `http://cara-backend:8000/tools` (API key =
+   `CARA_TOOLS_TOKEN`). The "CARA" model preset's base model must be `qwen/qwen3.6-35b-a3b`.
+   Re-apply the CARA system prompt if needed.
 
 ## Verify (quick checklist)
-- `curl http://localhost:8000/healthz` → `{"status":"ok"}`
-- Chat works in Open WebUI (http://localhost:3000) with the Qwen model
+- `curl http://cara.local:8000/healthz` or `curl http://<LAN-IP>:8000/healthz` → `{"status":"ok"}`
+- Chat works in Open WebUI (http://cara.local:3000 or `http://<LAN-IP>:3000`) with `qwen/qwen3.6-35b-a3b`; a simple order
+  question answers quickly (non-thinking) and a how-to question shows a thinking block
 - An order question (e.g. "status of estimate 22736") returns QBO + Monday data
 - A machine question returns the right manual
 - `check_inventory` returns stock counts

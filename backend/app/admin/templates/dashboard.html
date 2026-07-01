@@ -183,6 +183,42 @@
 </section>
 
 <section>
+  <h2>LLM sampling parameters</h2>
+  <form method="post" action="/admin/llm/sampling" class="row">
+    {% for mode, label in [('quick','Non-thinking (quick — simple order questions)'), ('thinking','Thinking (complex how-to / machine questions)')] %}
+    <fieldset style="flex:1; min-width:300px; border:1px solid #ccc; border-radius:6px; padding:10px;">
+      <legend><strong>{{ label }}</strong></legend>
+      <div class="row">
+        <div><label>Temperature</label><input name="{{ mode }}_temperature" type="number" step="0.01" min="0" max="2" value="{{ llm_modes[mode].temperature }}"></div>
+        <div><label>Top P</label><input name="{{ mode }}_top_p" type="number" step="0.01" min="0" max="1" value="{{ llm_modes[mode].top_p }}"></div>
+        <div><label>Top K</label><input name="{{ mode }}_top_k" type="number" step="1" min="0" value="{{ llm_modes[mode].top_k }}"></div>
+        <div><label>Presence penalty</label><input name="{{ mode }}_presence_penalty" type="number" step="0.01" min="-2" max="2" value="{{ llm_modes[mode].presence_penalty }}"></div>
+        <div><label>Repetition penalty</label><input name="{{ mode }}_repetition_penalty" type="number" step="0.01" min="0" max="2" value="{{ llm_modes[mode].repetition_penalty }}"></div>
+      </div>
+    </fieldset>
+    {% endfor %}
+    <button>Save sampling</button>
+  </form>
+  <p class="muted">CARA auto-routes each message: simple order/inventory questions use <strong>Non-thinking</strong> (fast, no reasoning); how-to / machine / maintenance questions use <strong>Thinking</strong>. These set the model's sampling per mode (needs the Qwen3.6 model + the LLM proxy). Blank = built-in default.</p>
+</section>
+
+<section>
+  <h2>Admin password</h2>
+  {% if pw_status == 'ok' %}<p class="ok">Password changed.</p>
+  {% elif pw_status == 'bad_current' %}<p class="bad">Current password is incorrect.</p>
+  {% elif pw_status == 'mismatch' %}<p class="bad">New passwords don't match.</p>
+  {% elif pw_status == 'too_short' %}<p class="bad">New password must be at least 8 characters.</p>
+  {% elif pw_status == 'error' %}<p class="bad">Could not change the password.</p>{% endif %}
+  <form method="post" action="/admin/password" class="row">
+    <div><label>Current password</label><input name="current_password" type="password" autocomplete="current-password" required></div>
+    <div><label>New password</label><input name="new_password" type="password" autocomplete="new-password" required></div>
+    <div><label>Confirm new password</label><input name="confirm_password" type="password" autocomplete="new-password" required></div>
+    <button>Change password</button>
+  </form>
+  <p class="muted">Changes the login for <strong>{{ admin }}</strong> immediately (you stay signed in). At least 8 characters. The <code>.env</code> <code>CARA_ADMIN_PASSWORD</code> is only the first-run bootstrap and isn't used once the admin exists.</p>
+</section>
+
+<section>
   <h2>Support &amp; troubleshooting</h2>
   <p class="muted">Need help, or seeing a sync error above? Contact <strong>{{ support_contact or 'your CARA administrator' }}</strong>.</p>
   <p class="muted">Shareable diagnostic logs: <code>data/cara/cara.log</code>. Per-integration errors also appear in the Data sync table.</p>

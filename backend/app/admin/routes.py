@@ -13,10 +13,10 @@ from sqlmodel import select
 from ..config import get_settings
 from ..db import get_session
 from ..kv import get_setting, get_zoneinfo, set_setting
-from ..models import Document, InventoryItem, Machine, MondayJob, Order, SyncState
+from ..models import AdminUser, Document, InventoryItem, Machine, MondayJob, Order, SyncState
 from ..rag.ingest import ingest_document
 from ..rag.store import delete_document as delete_doc_chunks
-from ..security import authenticate, credential_status, load_credentials, save_credentials
+from ..security import authenticate, credential_status, hash_password, load_credentials, save_credentials
 from ..sync.service import run_sync
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -105,6 +105,14 @@ def dashboard(request: Request):
     groups_raw = get_setting("monday_groups_cache", "") or ""
     monday_groups = json.loads(groups_raw) if groups_raw else []
     monday_group = get_setting("monday_group", "") or "Open Jobs"
+    _llm_defaults = {
+        "quick": {"temperature": "0.7", "top_p": "0.8", "top_k": "20", "presence_penalty": "0.0", "repetition_penalty": "1.0"},
+        "thinking": {"temperature": "0.6", "top_p": "0.95", "top_k": "20", "presence_penalty": "0.0", "repetition_penalty": "1.0"},
+    }
+    llm_modes = {
+        mode: {p: get_setting(f"llm_{p}_{mode}", d) for p, d in defs.items()}
+        for mode, defs in _llm_defaults.items()
+    }
     return templates.TemplateResponse(
         request,
         "dashboard.html",
@@ -125,6 +133,8 @@ def dashboard(request: Request):
             "monday_groups": monday_groups,
             "monday_group": monday_group,
             "monday_columns_error": get_setting("monday_columns_error", "") or "",
+            "llm_modes": llm_modes,
+            "pw_status": request.query_params.get("pw", ""),
         },
     )
 
@@ -265,6 +275,44 @@ def save_settings(
     set_setting("inventory_path", inventory_path.strip())
     set_setting("inventory_sheet", inventory_sheet.strip())
     set_setting("timezone", timezone.strip())
+    return RedirectResponse("/admin", status_code=303)
+
+
+@router.post("/password")
+def change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+):
+    if not _logged_in(request):
+        return _redirect_login()
+    username = request.session.get("admin") or ""
+    if not authenticate(username, current_password):
+        return RedirectResponse("/admin?pw=bad_current", status_code=303)
+    if len(new_password) < 8:
+        return RedirectResponse("/admin?pw=too_short", status_code=303)
+    if new_password != confirm_password:
+        return RedirectResponse("/admin?pw=mismatch", status_code=303)
+    with get_session() as s:
+        user = s.exec(select(AdminUser).where(AdminUser.username == username)).first()
+        if not user:
+            return RedirectResponse("/admin?pw=error", status_code=303)
+        user.password_hash = hash_password(new_password)
+        s.add(user)
+        s.commit()
+    return RedirectResponse("/admin?pw=ok", status_code=303)
+
+
+@router.post("/llm/sampling")
+async def save_llm_sampling(request: Request):
+    """Per-mode sampling params consumed by the LLM proxy (backend/app/llm/proxy.py)."""
+    if not _logged_in(request):
+        return _redirect_login()
+    form = await request.form()
+    for mode in ("quick", "thinking"):
+        for p in ("temperature", "top_p", "top_k", "presence_penalty", "repetition_penalty"):
+            set_setting(f"llm_{p}_{mode}", (form.get(f"{mode}_{p}") or "").strip())
     return RedirectResponse("/admin", status_code=303)
 
 
