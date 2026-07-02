@@ -17,10 +17,11 @@ from sqlalchemy import and_, or_
 from sqlmodel import select
 
 from ..config import get_settings
+from ..core_inventory import CoreInventoryError, search_inventory
 from ..connectors import quickbooks
 from ..db import get_session
 from ..kv import get_timezone_name, get_zoneinfo
-from ..models import InventoryItem, Machine, MondayJob, Order
+from ..models import Machine, MondayJob, Order
 from ..rag.store import search_documents
 from ..security import load_credentials, print_token
 
@@ -354,21 +355,7 @@ def check_inventory(
     item: str = Query(..., description="Item name or SKU"),
     limit: int = Query(10, ge=1, le=50),
 ):
-    with get_session() as s:
-        like = f"%{item}%"
-        rows = s.exec(
-            select(InventoryItem)
-            .where(or_(InventoryItem.name.like(like), InventoryItem.sku.like(like)))
-            .limit(limit)
-        ).all()
-        return [
-            {
-                "sku": r.sku,
-                "name": r.name,
-                "quantity": r.quantity,
-                "unit": r.unit,
-                "location": r.location,
-                "updated_at": r.updated_at,
-            }
-            for r in rows
-        ]
+    try:
+        return search_inventory(item, limit)
+    except CoreInventoryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc

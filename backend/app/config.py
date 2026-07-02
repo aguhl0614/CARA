@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # tool-server auth). Empty = open. Set this to lock the data tools down on a shared network.
     tools_token: str = ""
 
+    # Live inventory source: CORE owns inventory and FIFO quantity state in PostgreSQL.
+    # Example: postgresql://core:core-change-me@postgres:5432/core_inventory
+    core_database_url: str = ""
+
     # LLM proxy: Open WebUI points OPENAI_API_BASE_URL at this backend's /llm/v1, which classifies
     # each chat (quick/non-thinking vs thinking) and forwards to LM Studio with per-mode params.
     llm_upstream: str = "http://host.docker.internal:1234/v1"  # the real LM Studio OpenAI API

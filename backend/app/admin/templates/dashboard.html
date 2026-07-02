@@ -23,6 +23,24 @@
 </section>
 
 <section>
+  <h2>CORE inventory</h2>
+  <table>
+    <tr><th>Status</th><th>Active items</th><th>Source</th></tr>
+    <tr>
+      <td>
+        {% if core_inventory.connected %}<span class="ok">connected</span>
+        {% elif core_inventory.configured %}<span class="bad">error</span>
+        {% else %}<span class="bad">not configured</span>{% endif %}
+      </td>
+      <td>{{ core_inventory.item_count if core_inventory.item_count is not none else '—' }}</td>
+      <td class="muted">CORE PostgreSQL via <code>CARA_CORE_DATABASE_URL</code></td>
+    </tr>
+  </table>
+  {% if core_inventory.error %}<p class="bad">{{ core_inventory.error }}</p>{% endif %}
+  <p class="muted">Inventory answers are read live from CORE. Uploaded inventory files are searchable documents only; they no longer drive stock counts.</p>
+</section>
+
+<section>
   <h2>Credentials <span class="muted">(encrypted at rest)</span></h2>
   <table>
     <tr><th>Provider</th><th>Configured</th></tr>
@@ -171,15 +189,10 @@
 <section>
   <h2>Settings</h2>
   <form method="post" action="/admin/settings" class="row">
-    <div style="flex:1; min-width:340px;">
-      <label>Inventory file path (full macOS path; blank = use a file uploaded under Documents)</label>
-      <input name="inventory_path" value="{{ inventory_path }}" style="width:100%;" placeholder="/Users/Shared/Inventory/inventory.xlsx">
-    </div>
-    <div><label>Sheet / tab (optional)</label><input name="inventory_sheet" value="{{ inventory_sheet }}" placeholder="first sheet"></div>
     <div><label>Time zone (IANA)</label><input name="timezone" value="{{ timezone }}" placeholder="America/Chicago"></div>
     <button>Save</button>
   </form>
-  <p class="muted">Time zone drives "today / this week / overdue" and how times are shown here (dates MM-DD-YYYY, times h:mm AM/PM). Inventory: CARA reads the file in place (read-only) and re-syncs when it changes — paths under <code>/Users</code> work out of the box; for a <code>/Volumes</code> network share, ask to add it. After changing the inventory path, use <strong>Sync now</strong> on the inventory row.</p>
+  <p class="muted">Time zone drives "today / this week / overdue" and how times are shown here (dates MM-DD-YYYY, times h:mm AM/PM).</p>
 </section>
 
 <section>

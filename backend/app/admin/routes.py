@@ -11,13 +11,14 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from ..config import get_settings
+from ..core_inventory import inventory_status
 from ..db import get_session
 from ..kv import get_setting, get_zoneinfo, set_setting
-from ..models import AdminUser, Document, InventoryItem, Machine, MondayJob, Order, SyncState
+from ..models import AdminUser, Document, Machine, MondayJob, Order, SyncState
 from ..rag.ingest import ingest_document
 from ..rag.store import delete_document as delete_doc_chunks
 from ..security import authenticate, credential_status, hash_password, load_credentials, save_credentials
-from ..sync.service import run_sync
+from ..sync.service import SOURCES, run_sync
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 _settings = get_settings()
@@ -81,7 +82,8 @@ def dashboard(request: Request):
     if not _logged_in(request):
         return _redirect_login()
     with get_session() as s:
-        sync_states = s.exec(select(SyncState)).all()
+        sync_state_by_source = {st.source: st for st in s.exec(select(SyncState)).all()}
+        sync_states = [sync_state_by_source[source] for source in SOURCES if source in sync_state_by_source]
         machines = s.exec(select(Machine)).all()
         documents = s.exec(select(Document)).all()
         # Total records CACHED per source (not the last run's delta).
@@ -89,7 +91,6 @@ def dashboard(request: Request):
             "bigcommerce": s.exec(select(func.count()).select_from(Order).where(Order.source == "bigcommerce")).one(),
             "quickbooks": s.exec(select(func.count()).select_from(Order).where(Order.source == "quickbooks")).one(),
             "monday": s.exec(select(func.count()).select_from(MondayJob)).one(),
-            "inventory": s.exec(select(func.count()).select_from(InventoryItem)).one(),
         }
     cols_raw = get_setting("monday_columns_cache", "") or ""
     monday_columns = json.loads(cols_raw) if cols_raw else []
@@ -125,8 +126,7 @@ def dashboard(request: Request):
             "documents": documents,
             "data_dir": str(_settings.data_dir),
             "support_contact": _settings.support_contact,
-            "inventory_path": get_setting("inventory_path", ""),
-            "inventory_sheet": get_setting("inventory_sheet", ""),
+            "core_inventory": inventory_status(),
             "timezone": get_setting("timezone", "") or _settings.timezone,
             "monday_columns": monday_columns,
             "monday_map": monday_map,
@@ -266,14 +266,10 @@ def remove_document(request: Request, doc_id: int):
 @router.post("/settings")
 def save_settings(
     request: Request,
-    inventory_path: str = Form(""),
-    inventory_sheet: str = Form(""),
     timezone: str = Form(""),
 ):
     if not _logged_in(request):
         return _redirect_login()
-    set_setting("inventory_path", inventory_path.strip())
-    set_setting("inventory_sheet", inventory_sheet.strip())
     set_setting("timezone", timezone.strip())
     return RedirectResponse("/admin", status_code=303)
 

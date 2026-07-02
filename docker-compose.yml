@@ -53,14 +53,16 @@ services:
     volumes:
       - ./data/cara:/data/cara            # SQLite cache + settings + secret key + model cache
       - ./data/chroma:/data/chroma        # vector store
-      - ./data/documents:/data/documents  # manuals / workflow docs / inventory xlsx
-      # Read-only mount of ONLY the shared Inventory folder, mirrored under /hostfs so the
-      # admin-UI inventory path resolves. Long syntax because the host path contains spaces.
-      - type: bind
-        source: "/Users/gds/Library/CloudStorage/OneDrive-SharedLibraries-CollegiateAwards/Collegiate Awards - Documents/General/Inventory"
-        target: "/hostfs/Users/gds/Library/CloudStorage/OneDrive-SharedLibraries-CollegiateAwards/Collegiate Awards - Documents/General/Inventory"
-        read_only: true
+      - ./data/documents:/data/documents  # manuals / workflow docs / uploaded reference files
+    networks:
+      - default
+      - core
     restart: unless-stopped
+
+networks:
+  core:
+    external: true
+    name: ${CORE_DOCKER_NETWORK:-core_default}
 
 # NOTE: LM Studio runs as a HOST app (not a container) so it can use Metal/GPU.
 # Every persistent volume above is a bind mount into ./data so the whole system

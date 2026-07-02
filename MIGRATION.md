@@ -1,16 +1,17 @@
 # Moving CARA to a new machine
 
 Everything CARA needs lives in this folder **except** LM Studio and the model weights
-(LM Studio is a host app; its models live in `~/.lmstudio`). The whole system — code,
-config (`.env`), and all state (`./data`) — is portable.
+(LM Studio is a host app; its models live in `~/.lmstudio`) and the sibling CORE project
+that owns the inventory PostgreSQL database. CARA's code, config (`.env`), and state
+(`./data`) are portable.
 
 ## What moves
 - The entire **CARA project folder**, including:
   - `.env` (config + admin password + Fernet key reference)
   - `data/` — SQLite cache, Chroma vectors, uploaded documents, Open WebUI accounts/chats,
     and `data/cara/secret.key` (the key that decrypts your stored API credentials)
-- **Not** moved automatically: LM Studio + the model, and any **external inventory file**
-  that lives outside the folder (see step 4).
+- **Not** moved automatically: LM Studio + the model, and the sibling **CORE** project/data
+  unless you copy or restore CORE too.
 
 ## Steps
 
@@ -25,17 +26,15 @@ config (`.env`), and all state (`./data`) — is portable.
 4. **Local hostname.** Update local DNS/mDNS/hosts so `cara.local` points to the new Mac's
    reserved LAN IP. Direct IP access still works through `http://<LAN-IP>:3000`.
 
-5. **Inventory file mount (machine-specific — edit this!).** The inventory file is read
-   from a folder *outside* this project, so `docker-compose.yml` bind-mounts that one folder
-   read-only. On a new machine the path differs, so:
-   - In `docker-compose.yml`, update the inventory bind mount's `source:` **and** `target:`
-     to the new machine's folder (keep `target:` = `/hostfs` + the new source path), e.g.
-     `source: "/Users/NEWUSER/…/Inventory"` and `target: "/hostfs/Users/NEWUSER/…/Inventory"`.
-   - In **Docker Desktop → Settings → Resources → File Sharing**, make sure that folder (or
-     `/Users`) is shared.
-   - After startup, set the matching full path in the admin UI (**Settings → Inventory file path**).
-   - *If you don't use an external inventory file*, delete that bind-mount block and instead
-     upload the spreadsheet via the admin **Documents** page (type `inventory`).
+5. **CORE inventory.** Put the CORE and CARA folders next to each other and start CORE first:
+   ```bash
+   cd ../CORE
+   docker compose up -d --build
+   ```
+   CARA joins CORE's Docker network (`core_default` by default) and reads inventory from CORE
+   PostgreSQL using `CARA_CORE_DATABASE_URL`. In CARA's `.env`, make sure the password in that URL
+   matches CORE's `POSTGRES_PASSWORD`. If CORE's Compose project/network name changes, set
+   `CORE_DOCKER_NETWORK` in CARA's `.env`.
 
 6. **Credentials / Fernet key.** Your QuickBooks/Monday/BigCommerce credentials are stored
    **encrypted** in `data/cara/cara.db`, and the key is `data/cara/secret.key` — both move with
@@ -61,7 +60,7 @@ config (`.env`), and all state (`./data`) — is portable.
   question answers quickly (non-thinking) and a how-to question shows a thinking block
 - An order question (e.g. "status of estimate 22736") returns QBO + Monday data
 - A machine question returns the right manual
-- `check_inventory` returns stock counts
+- CARA admin shows CORE inventory as connected and `check_inventory` returns CORE stock counts
 
 ## Backups
 

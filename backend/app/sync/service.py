@@ -1,7 +1,7 @@
 """Sync orchestration: pull only what changed, upsert into the local cache.
 
 Each connector returns a normalized dict:
-    {"orders": [..], "monday": [..], "inventory": [..], "cursor": "<new cursor>"}
+    {"orders": [..], "monday": [..], "cursor": "<new cursor>"}
 Upserts are keyed so post-creation edits (req #2) and frequent Monday status
 changes (req #3) overwrite the cached row rather than duplicating it.
 """
@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from sqlmodel import select
 
 from ..db import get_session
-from ..models import InventoryItem, MondayJob, Order, SyncState
+from ..models import MondayJob, Order, SyncState
 from ..security import load_credentials
 
 log = logging.getLogger("cara.sync")
@@ -24,7 +24,6 @@ SOURCES: dict[str, int] = {
     "bigcommerce": 600,
     "quickbooks": 600,
     "monday": 180,
-    "inventory": 900,
 }
 
 
@@ -122,47 +121,26 @@ def _link_job_to_orders(s, job: MondayJob) -> None:
             s.add(order)
 
 
-def upsert_inventory(records: list[dict]) -> int:
-    n = 0
-    with get_session() as s:
-        for r in records:
-            existing = None
-            if r.get("sku"):
-                existing = s.exec(
-                    select(InventoryItem).where(InventoryItem.sku == r["sku"])
-                ).first()
-            if not existing and r.get("name"):
-                existing = s.exec(
-                    select(InventoryItem).where(InventoryItem.name == r["name"])
-                ).first()
-            it = existing or InventoryItem(name=r.get("name", "unknown"))
-            for k, v in r.items():
-                setattr(it, k, v)
-            it.updated_at = _now()
-            s.add(it)
-            n += 1
-        s.commit()
-    return n
-
-
 def run_sync(source: str) -> dict:
     """Run one connector and apply its results. Safe to call from the scheduler or the UI."""
-    from ..connectors import bigcommerce, inventory_xlsx, monday, quickbooks
+    from ..connectors import bigcommerce, monday, quickbooks
 
     handlers = {
         "quickbooks": quickbooks.sync,
         "monday": monday.sync,
         "bigcommerce": bigcommerce.sync,
-        "inventory": inventory_xlsx.sync,
     }
+    if source not in handlers:
+        return {"ok": False, "error": f"unknown sync source: {source}"}
+
     with get_session() as s:
         st = s.get(SyncState, source)
         if st and not st.enabled:
             return {"skipped": True}
 
     try:
-        creds = {} if source == "inventory" else (load_credentials(source) or {})
-        if source != "inventory" and not creds:
+        creds = load_credentials(source) or {}
+        if not creds:
             _finish(source, "error", error="not configured")
             return {"ok": False, "error": "not configured"}
 
@@ -170,7 +148,6 @@ def run_sync(source: str) -> dict:
         count = (
             upsert_orders(result.get("orders", []))
             + upsert_monday_jobs(result.get("monday_jobs", []), replace=result.get("replace", False))
-            + upsert_inventory(result.get("inventory", []))
         )
         _finish(source, "ok", cursor=result.get("cursor"), count=count)
         return {"ok": True, "count": count, "cursor": result.get("cursor")}
